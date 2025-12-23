@@ -229,7 +229,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
-                .text("📍 Please select action:")
+                .text("\uD83D\uDD3D Please select action:")
                 .replyMarkup(markup)
                 .build();
 
