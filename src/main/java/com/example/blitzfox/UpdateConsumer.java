@@ -89,7 +89,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         if(user.getIsPremium() != null && user.getIsPremium()) {
             premium_text = "\n\nIs Premium User ⭐";
         } else {
-            premium_text = "";
+            premium_text = "Not a Premium User";
         }
 
         if (user.getLastName() != null && user.getUserName() != null) {
