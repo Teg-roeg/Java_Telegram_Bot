@@ -43,8 +43,6 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         int jackpots = 0;
     }
 
-    private final Map<Long, Integer> lastMessageIdMap = new ConcurrentHashMap<>();
-
     private final Map<Long, List<Task>> userTasks = new ConcurrentHashMap<>();
 
     static class Task {
@@ -65,6 +63,8 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
             if (messageText.equals("/start")) {
                 sendMainMenu(chatId);
+            } else if (messageText.equalsIgnoreCase("/help")) {
+                sendHelpMenu(chatId);
             } else if (messageText.startsWith("/add ")) {
                 String taskText = messageText.substring(5);
                 addTask(chatId, taskText);
@@ -87,15 +87,138 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         var chatId = callbackQuery.getMessage().getChatId();
         var user = callbackQuery.getFrom();
 
+        deleteCallbackMessage(callbackQuery);
+
         switch (data) {
+            case "tasks_menu" -> sendTasksMenu(chatId);
+            case "help" -> sendHelpMenu(chatId);
             case "time" -> sendTime(chatId);
             case "rnd_number" -> sendRandom(chatId);
             case "my_name" -> sendMyName(chatId, user);
             case "gamble_again" -> sendRandom(chatId);
             case "back" -> sendMainMenuRun(chatId);
             case "check" -> sendStats(chatId);
+            case "tasks_add" -> sendMessage(chatId, "\uD83D\uDCDD Task Manager \n\nUse /add <task> to add a new task.");
+            case "tasks_list" -> listTasks(chatId);
             default -> sendMessage(chatId, "Unknown command.");
         }
+    }
+
+    private void sendHelpMenu(Long chatId) {
+        String text;
+
+        text = "⚙\uFE0F Help\n\nHere are the list of commands:\n\n" + "/start - Start bot\n\n"
+                + "/add <task_here> - Add task to list\n" + "/tasks - List all tasks\n" + "/done [i] - Selected task marked as Done\n" +
+                "/delete [i] - Removes task from the task list\n";
+
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
+                .text("◀️ Back")
+                .callbackData("back")
+                .build();
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(markup)
+                .build();
+
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void addTask(Long chatId, String description) {
+        Task task = new Task(description);
+        userTasks.computeIfAbsent(chatId, k -> new ArrayList<>()).add(task);
+        sendMessageWithBack(chatId, "✅ Task added: " + description);
+    }
+
+    private void listTasks(Long chatId) {
+        List<Task> tasks = userTasks.get(chatId);
+        if (tasks == null || tasks.isEmpty()) {
+            sendMessageWithBack(chatId, "📋 No tasks yet.");
+            return;
+        }
+        StringBuilder sb = new StringBuilder("📋 Your Tasks:\n");
+        int i = 1;
+        for (Task t : tasks) {
+            sb.append(i).append(". ").append(t.description)
+                    .append(t.completed ? " ✅" : "")
+                    .append("\n");
+            i++;
+        }
+        sendMessageWithBack(chatId, sb.toString());
+    }
+
+    private void markDone(Long chatId, String indexStr) {
+        try {
+            int index = Integer.parseInt(indexStr) - 1;
+            List<Task> tasks = userTasks.get(chatId);
+            if (tasks != null && index >= 0 && index < tasks.size()) {
+                tasks.get(index).completed = true;
+                sendMessageWithBack(chatId, "✅ Task marked as done: " + tasks.get(index).description);
+            } else sendMessageWithBack(chatId, "Invalid task number.");
+        } catch (Exception e) {
+            sendMessageWithBack(chatId, "Invalid task number.");
+        }
+    }
+
+    private void deleteTask(Long chatId, String indexStr) {
+        try {
+            int index = Integer.parseInt(indexStr) - 1;
+            List<Task> tasks = userTasks.get(chatId);
+            if (tasks != null && index >= 0 && index < tasks.size()) {
+                sendMessageWithBack(chatId, "🗑️ Task deleted: " + tasks.get(index).description);
+                tasks.remove(index);
+            } else sendMessageWithBack(chatId, "Invalid task number.");
+        } catch (Exception e) {
+            sendMessageWithBack(chatId, "Invalid task number.");
+        }
+    }
+
+    private void sendMessageWithBack(Long chatId, String text) {
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
+                .text("◀️ Back")
+                .callbackData("back")
+                .build();
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(markup)
+                .build();
+
+        sendMessageWithCleanup(chatId, message);
+    }
+    private void sendTasksMenu(Long chatId) {
+        InlineKeyboardButton addBtn = InlineKeyboardButton.builder()
+                .text("➕ Add Task")
+                .callbackData("tasks_add")
+                .build();
+
+        InlineKeyboardButton listBtn = InlineKeyboardButton.builder()
+                .text("📋 List Tasks")
+                .callbackData("tasks_list")
+                .build();
+
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
+                .text("◀️ Back")
+                .callbackData("back")
+                .build();
+
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
+                new InlineKeyboardRow(addBtn),
+                new InlineKeyboardRow(listBtn),
+                new InlineKeyboardRow(backBtn)
+        ));
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("📝 Task Manager \n\nChoose an action:")
+                .replyMarkup(markup)
+                .build();
+
+        sendMessageWithCleanup(chatId, message);
     }
 
     private void sendMessage(Long chatId, String messageText) {
@@ -250,65 +373,16 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         };
     }
 
-    private void addTask(Long chatId, String description) {
-        Task task = new Task(description);
-        userTasks.computeIfAbsent(chatId, k -> new ArrayList<>()).add(task);
-        sendMessage(chatId, "✅ Task added: " + description);
-    }
-
-    private void listTasks(Long chatId) {
-        List<Task> tasks = userTasks.get(chatId);
-        if (tasks == null || tasks.isEmpty()) {
-            sendMessage(chatId, "📋 No tasks yet.");
-            return;
-        }
-        StringBuilder sb = new StringBuilder("📋 Your Tasks:\n");
-        int i = 1;
-        for (Task t : tasks) {
-            sb.append(i).append(". ")
-                    .append(t.description)
-                    .append(t.completed ? " ✅" : "")
-                    .append("\n");
-            i++;
-        }
-        sendMessage(chatId, sb.toString());
-    }
-
-    private void markDone(Long chatId, String indexStr) {
-        try {
-            int index = Integer.parseInt(indexStr) - 1;
-            List<Task> tasks = userTasks.get(chatId);
-            if (tasks != null && index >= 0 && index < tasks.size()) {
-                tasks.get(index).completed = true;
-                sendMessage(chatId, "✅ Task marked as done: " + tasks.get(index).description);
-            } else sendMessage(chatId, "Invalid task number.");
-        } catch (Exception e) {
-            sendMessage(chatId, "Invalid task number.");
-        }
-    }
-
-    private void deleteTask(Long chatId, String indexStr) {
-        try {
-            int index = Integer.parseInt(indexStr) - 1;
-            List<Task> tasks = userTasks.get(chatId);
-            if (tasks != null && index >= 0 && index < tasks.size()) {
-                sendMessage(chatId, "🗑️ Task deleted: " + tasks.get(index).description);
-                tasks.remove(index);
-            } else sendMessage(chatId, "Invalid task number.");
-        } catch (Exception e) {
-            sendMessage(chatId, "Invalid task number.");
-        }
-    }
 
     private void sendMainMenuRun(Long chatId) {
         var button1 = InlineKeyboardButton.builder().text("🕔 Time").callbackData("time").build();
         var button2 = InlineKeyboardButton.builder().text("🎰 Gambling").callbackData("rnd_number").build();
         var button3 = InlineKeyboardButton.builder().text("👤 My Info").callbackData("my_name").build();
+        var button4 = InlineKeyboardButton.builder().text("📝 Tasks").callbackData("tasks_menu").build();
 
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
-                new InlineKeyboardRow(button1),
-                new InlineKeyboardRow(button2),
-                new InlineKeyboardRow(button3)
+                new InlineKeyboardRow(button1,button2),
+                new InlineKeyboardRow(button3,button4)
         ));
 
         SendMessage message = SendMessage.builder()
@@ -324,11 +398,11 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         var button1 = InlineKeyboardButton.builder().text("🕔 Time").callbackData("time").build();
         var button2 = InlineKeyboardButton.builder().text("🎰 Gambling").callbackData("rnd_number").build();
         var button3 = InlineKeyboardButton.builder().text("👤 My Info").callbackData("my_name").build();
+        var button4 = InlineKeyboardButton.builder().text("📝 Tasks").callbackData("tasks_menu").build();
 
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
-                new InlineKeyboardRow(button1),
-                new InlineKeyboardRow(button2),
-                new InlineKeyboardRow(button3)
+                new InlineKeyboardRow(button1,button2),
+                new InlineKeyboardRow(button3,button4)
         ));
 
         SendMessage message = SendMessage.builder()
@@ -340,10 +414,20 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         sendMessageWithCleanup(chatId, message);
     }
 
-    private void sendMessageWithCleanup(Long chatId, SendMessage message) {
-        Integer lastMessageId = lastMessageIdMap.get(chatId);
+    private void deleteCallbackMessage(CallbackQuery callbackQuery) {
+        try {
+            telegramClient.execute(
+                    DeleteMessage.builder()
+                            .chatId(callbackQuery.getMessage().getChatId())
+                            .messageId(callbackQuery.getMessage().getMessageId())
+                            .build()
+            );
+        } catch (Exception ignored) {}
+    }
 
-        // Delete last message if exists
+    private void sendMessageWithCleanup(Long chatId, SendMessage message) {
+        /*
+        Integer lastMessageId = lastMessageIdMap.get(chatId);
         if (lastMessageId != null) {
             try {
                 telegramClient.execute(DeleteMessage.builder()
@@ -352,10 +436,10 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                         .build());
             } catch (Exception ignored) {}
         }
+        */
 
         try {
-            var sentMessage = telegramClient.execute(message);
-            if (sentMessage != null) lastMessageIdMap.put(chatId, sentMessage.getMessageId());
+            telegramClient.execute(message);
         } catch (Exception e) {
             e.printStackTrace();
         }
