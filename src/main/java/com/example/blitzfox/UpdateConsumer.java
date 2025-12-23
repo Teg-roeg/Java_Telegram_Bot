@@ -65,7 +65,16 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 sendMainMenu(chatId);
             } else if (messageText.equalsIgnoreCase("/help")) {
                 sendHelpMenu(chatId);
-            } else if (messageText.startsWith("/add ")) {
+            } else if (messageText.equalsIgnoreCase("/time")) {
+                sendTime(chatId);
+            }
+            else if (messageText.equalsIgnoreCase("/gamb")) {
+                sendRandom(chatId);
+            }
+            else if (messageText.equalsIgnoreCase("/myinfo")) {
+                sendMyName(chatId, update.getMessage().getFrom());
+            }
+            else if (messageText.startsWith("/add ")) {
                 String taskText = messageText.substring(5);
                 addTask(chatId, taskText);
             } else if (messageText.equals("/tasks")) {
@@ -107,9 +116,10 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
     private void sendHelpMenu(Long chatId) {
         String text;
 
-        text = "⚙\uFE0F Help\n\nHere are the list of commands:\n\n" + "/start - Start bot\n\n"
-                + "/add <task_here> - Add task to list\n" + "/tasks - List all tasks\n" + "/done [i] - Selected task marked as Done\n" +
-                "/delete [i] - Removes task from the task list\n";
+        text = "⚙\uFE0F Help\n\nHere are the list of commands:\n\n" + "/start - Start bot\n\n" + "/time - Shows current time and date\n\n" +
+                "/myinfo - Shows user's name and id\n\n"
+                + "/add <task_here> - Add task to list\n" + "/tasks - List all tasks\n" + "/done [ i ] - Selected task marked as Done\n" +
+                "/delete [ i ] - Removes task from the task list\n\n"+ "/help - List commands\n";
 
         InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
                 .text("◀️ Back")
@@ -379,10 +389,12 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         var button2 = InlineKeyboardButton.builder().text("🎰 Gambling").callbackData("rnd_number").build();
         var button3 = InlineKeyboardButton.builder().text("👤 My Info").callbackData("my_name").build();
         var button4 = InlineKeyboardButton.builder().text("📝 Tasks").callbackData("tasks_menu").build();
+        var button5 = InlineKeyboardButton.builder().text("⚙\uFE0F Help").callbackData("help").build();
 
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
                 new InlineKeyboardRow(button1,button2),
-                new InlineKeyboardRow(button3,button4)
+                new InlineKeyboardRow(button3,button4),
+                new InlineKeyboardRow(button5)
         ));
 
         SendMessage message = SendMessage.builder()
@@ -399,10 +411,12 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         var button2 = InlineKeyboardButton.builder().text("🎰 Gambling").callbackData("rnd_number").build();
         var button3 = InlineKeyboardButton.builder().text("👤 My Info").callbackData("my_name").build();
         var button4 = InlineKeyboardButton.builder().text("📝 Tasks").callbackData("tasks_menu").build();
+        var button5 = InlineKeyboardButton.builder().text("⚙\uFE0F Help").callbackData("help").build();
 
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
                 new InlineKeyboardRow(button1,button2),
-                new InlineKeyboardRow(button3,button4)
+                new InlineKeyboardRow(button3,button4),
+                new InlineKeyboardRow(button5)
         ));
 
         SendMessage message = SendMessage.builder()
