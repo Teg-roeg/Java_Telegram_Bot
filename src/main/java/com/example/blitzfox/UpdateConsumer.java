@@ -282,10 +282,8 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             }
         }
 
-        // Send new message
         var sentMessage = telegramClient.execute(message);
 
-        // Save new message ID in the map
         allMessageIdsMap.put(chatId, List.of(sentMessage.getMessageId()));
     }
 
