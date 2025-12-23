@@ -278,7 +278,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                             .chatId(chatId)
                             .messageId(messageId)
                             .build());
-                } catch (Exception ignored) {} // ignore if already deleted
+                } catch (Exception ignored) {}
             }
         }
 
