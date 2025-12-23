@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
+import java.util.ArrayList;
+
 @Component
 public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
@@ -43,6 +45,18 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
     private final Map<Long, Integer> lastMessageIdMap = new ConcurrentHashMap<>();
 
+    private final Map<Long, List<Task>> userTasks = new ConcurrentHashMap<>();
+
+    static class Task {
+        String description;
+        boolean completed;
+
+        Task(String desc) {
+            this.description = desc;
+            this.completed = false;
+        }
+    }
+
     @Override
     public void consume(Update update) {
         if (update.hasMessage()) {
@@ -51,6 +65,15 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
             if (messageText.equals("/start")) {
                 sendMainMenu(chatId);
+            } else if (messageText.startsWith("/add ")) {
+                String taskText = messageText.substring(5);
+                addTask(chatId, taskText);
+            } else if (messageText.equals("/tasks")) {
+                listTasks(chatId);
+            } else if (messageText.startsWith("/done ")) {
+                markDone(chatId, messageText.substring(6).trim());
+            } else if (messageText.startsWith("/delete ")) {
+                deleteTask(chatId, messageText.substring(8).trim());
             } else {
                 sendMessage(chatId, "Sorry, I couldn't understand your message. Try again.");
             }
@@ -89,20 +112,20 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         if(user.getIsPremium() != null && user.getIsPremium()) {
             premium_text = "\n\nIs Premium User ⭐";
         } else {
-            premium_text = "Not a Premium User";
+            premium_text = "\n\nNot a Premium User";
         }
 
         if (user.getLastName() != null && user.getUserName() != null) {
-            text = "👤 My Info \nYour name is: %s\n\nYour nick: @%s".formatted(user.getFirstName() + " " + user.getLastName(), user.getUserName());
+            text = "👤 My Info \n\nYour name is: %s\n\nYour nick: @%s".formatted(user.getFirstName() + " " + user.getLastName(), user.getUserName());
             text += premium_text;
         } else if (user.getUserName() == null) {
-            text = "👤 My Info \nYour name is: %s\n\nYour nick: %s".formatted(user.getFirstName() + " " + (user.getLastName() != null ? user.getLastName() : ""), "Unknown");
+            text = "👤 My Info \n\nYour name is: %s\n\nYour nick: %s".formatted(user.getFirstName() + " " + (user.getLastName() != null ? user.getLastName() : ""), "Unknown");
             text += premium_text;
         } else if (user.getLastName() == null) {
-            text = "👤 My Info \nYour name is: %s\n\nYour nick: @%s".formatted(user.getFirstName(), user.getUserName());
+            text = "👤 My Info \n\nYour name is: %s\n\nYour nick: @%s".formatted(user.getFirstName(), user.getUserName());
             text += premium_text;
         } else {
-            text = "👤 My Info \nYour name is: %s\n\nYour nick: %s".formatted(user.getFirstName(), "Unknown");
+            text = "👤 My Info \n\nYour name is: %s\n\nYour nick: %s".formatted(user.getFirstName(), "Unknown");
             text += premium_text;
         }
 
@@ -225,6 +248,56 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             case 3 -> "rd";
             default -> "th";
         };
+    }
+
+    private void addTask(Long chatId, String description) {
+        Task task = new Task(description);
+        userTasks.computeIfAbsent(chatId, k -> new ArrayList<>()).add(task);
+        sendMessage(chatId, "✅ Task added: " + description);
+    }
+
+    private void listTasks(Long chatId) {
+        List<Task> tasks = userTasks.get(chatId);
+        if (tasks == null || tasks.isEmpty()) {
+            sendMessage(chatId, "📋 No tasks yet.");
+            return;
+        }
+        StringBuilder sb = new StringBuilder("📋 Your Tasks:\n");
+        int i = 1;
+        for (Task t : tasks) {
+            sb.append(i).append(". ")
+                    .append(t.description)
+                    .append(t.completed ? " ✅" : "")
+                    .append("\n");
+            i++;
+        }
+        sendMessage(chatId, sb.toString());
+    }
+
+    private void markDone(Long chatId, String indexStr) {
+        try {
+            int index = Integer.parseInt(indexStr) - 1;
+            List<Task> tasks = userTasks.get(chatId);
+            if (tasks != null && index >= 0 && index < tasks.size()) {
+                tasks.get(index).completed = true;
+                sendMessage(chatId, "✅ Task marked as done: " + tasks.get(index).description);
+            } else sendMessage(chatId, "Invalid task number.");
+        } catch (Exception e) {
+            sendMessage(chatId, "Invalid task number.");
+        }
+    }
+
+    private void deleteTask(Long chatId, String indexStr) {
+        try {
+            int index = Integer.parseInt(indexStr) - 1;
+            List<Task> tasks = userTasks.get(chatId);
+            if (tasks != null && index >= 0 && index < tasks.size()) {
+                sendMessage(chatId, "🗑️ Task deleted: " + tasks.get(index).description);
+                tasks.remove(index);
+            } else sendMessage(chatId, "Invalid task number.");
+        } catch (Exception e) {
+            sendMessage(chatId, "Invalid task number.");
+        }
     }
 
     private void sendMainMenuRun(Long chatId) {
