@@ -85,14 +85,25 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
     private void sendMyName(Long chatId, User user) {
         String text;
-        if (user.getLastName() != null && user.getUserName() != null) {
-            text = "👤 Your name is: %s\nYour nick: @%s".formatted(user.getFirstName() + " " + user.getLastName(), user.getUserName());
-        } else if (user.getUserName() == null) {
-            text = "👤 Your name is: %s\nYour nick: %s".formatted(user.getFirstName() + " " + (user.getLastName() != null ? user.getLastName() : ""), "Unknown");
-        } else if (user.getLastName() == null) {
-            text = "👤 Your name is: %s\nYour nick: @%s".formatted(user.getFirstName(), user.getUserName());
+        String premium_text;
+        if(user.getIsPremium() != null && user.getIsPremium()) {
+            premium_text = "\n\nIs Premium User ⭐";
         } else {
-            text = "👤 Your name is: %s\nYour nick: %s".formatted(user.getFirstName(), "Unknown");
+            premium_text = "";
+        }
+
+        if (user.getLastName() != null && user.getUserName() != null) {
+            text = "👤 My Info \nYour name is: %s\n\nYour nick: @%s".formatted(user.getFirstName() + " " + user.getLastName(), user.getUserName());
+            text += premium_text;
+        } else if (user.getUserName() == null) {
+            text = "👤 My Info \nYour name is: %s\n\nYour nick: %s".formatted(user.getFirstName() + " " + (user.getLastName() != null ? user.getLastName() : ""), "Unknown");
+            text += premium_text;
+        } else if (user.getLastName() == null) {
+            text = "👤 My Info \nYour name is: %s\n\nYour nick: @%s".formatted(user.getFirstName(), user.getUserName());
+            text += premium_text;
+        } else {
+            text = "👤 My Info \nYour name is: %s\n\nYour nick: %s".formatted(user.getFirstName(), "Unknown");
+            text += premium_text;
         }
 
         InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
@@ -189,7 +200,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         String ordinal = getDayOrdinal(dayOfMonth);
         String time = now.format(DateTimeFormatter.ofPattern("hh:mm a"));
 
-        String text = "📓 Day: " + dayOfWeek + ", " + dayOfMonth + ordinal + " of " + month + "\n\n🕔 Time: " + time;
+        String text = "🕔 Time: " + time + "\n\n📓 Day: " + dayOfWeek + ", " + dayOfMonth + ordinal + " of " + month;
 
         InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
                 .text("◀️ Back")
