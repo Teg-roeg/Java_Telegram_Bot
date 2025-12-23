@@ -362,7 +362,6 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 .chatId(chatId)
                 .build();
         message.setReplyMarkup(markup);
-
         sendMessageWithCleanup(chatId, message);
     }
 }
