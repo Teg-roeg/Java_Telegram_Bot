@@ -117,7 +117,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         String text;
 
         text = "⚙\uFE0F Help\n\nHere are the list of commands:\n\n" + "/start - Start bot\n\n" + "/time - Shows current time and date\n\n" +
-                "/myinfo - Shows user's name and id\n\n"
+                "/myinfo - Shows user's name and id\n\n" + "/gamb - Gambling slot\n\n"
                 + "/add <task_here> - Add task to list\n" + "/tasks - List all tasks\n" + "/done [ i ] - Selected task marked as Done\n" +
                 "/delete [ i ] - Removes task from the task list\n\n"+ "/help - List commands\n";
 
