@@ -25,7 +25,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @Component
 public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
-    @Value("${telegram.bot.token}")
+    @Value("${TELEGRAM_BOT_TOKEN}")
     private String botToken;
 
     private TelegramClient telegramClient;
