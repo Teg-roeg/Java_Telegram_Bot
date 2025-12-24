@@ -383,7 +383,6 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         };
     }
 
-
     private void sendMainMenuRun(Long chatId) {
         var button1 = InlineKeyboardButton.builder().text("🕔 Time").callbackData("time").build();
         var button2 = InlineKeyboardButton.builder().text("🎰 Gambling").callbackData("rnd_number").build();
