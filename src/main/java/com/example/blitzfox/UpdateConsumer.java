@@ -1,15 +1,11 @@
 package com.example.blitzfox;
 
-import com.example.blitzfox.entities.TaskEntity;
-import com.example.blitzfox.entities.UserEntity;
-import com.example.blitzfox.repositories.TaskRepository;
-import com.example.blitzfox.repositories.UserRepository;
 import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
@@ -17,12 +13,19 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+
+import com.example.blitzfox.repository.TaskRepository;
+import com.example.blitzfox.repository.UserRepository;
+import com.example.blitzfox.entity.TaskEntity;
+import com.example.blitzfox.entity.UserEntity;
 
 @Component
 public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
@@ -32,157 +35,335 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
     private TelegramClient telegramClient;
 
-    private final UserRepository userRepository;
-    private final TaskRepository taskRepository;
-
-    public UpdateConsumer(UserRepository userRepository, TaskRepository taskRepository) {
-        this.userRepository = userRepository;
-        this.taskRepository = taskRepository;
-    }
-
     @PostConstruct
     public void init() {
         this.telegramClient = new OkHttpTelegramClient(botToken);
     }
 
+    private final ConcurrentHashMap<Long, GambleStats> statsMap = new ConcurrentHashMap<>();
+    static class GambleStats {
+        int turns = 0;
+        int jackpots = 0;
+    }
+
+    private final ConcurrentHashMap<Long, Integer> lastMessageIdMap = new ConcurrentHashMap<>();
+
+    @Autowired
+    private TaskRepository taskRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
     @Override
     public void consume(Update update) {
         if (update.hasMessage()) {
-            Long chatId = update.getMessage().getChatId();
             String messageText = update.getMessage().getText();
-            User from = update.getMessage().getFrom();
+            Long chatId = update.getMessage().getChatId();
 
-            // Ensure user exists
-            UserEntity userEntity = userRepository.findByTelegramId(chatId);
-            if (userEntity == null) {
-                userEntity = new UserEntity();
-                userEntity.setTelegramId(chatId);
-                userEntity.setFirstName(from.getFirstName());
-                userEntity.setLastName(from.getLastName());
-                userEntity.setUsername(from.getUserName());
-                userEntity.setPremium(from.getIsPremium() != null ? from.getIsPremium() : false);
-                userRepository.save(userEntity);
-            }
+            if (messageText.equals("/start")) sendMainMenu(chatId);
+            else if (messageText.equalsIgnoreCase("/help")) sendHelpMenu(chatId);
+            else if (messageText.equalsIgnoreCase("/time")) sendTime(chatId);
+            else if (messageText.equalsIgnoreCase("/gamb")) sendRandom(chatId);
+            else if (messageText.equalsIgnoreCase("/myinfo")) sendMyName(chatId, update.getMessage().getFrom());
+            else if (messageText.startsWith("/add ")) addTask(chatId, messageText.substring(5));
+            else if (messageText.equals("/tasks")) listTasks(chatId);
+            else if (messageText.startsWith("/done ")) markDone(chatId, messageText.substring(6).trim());
+            else if (messageText.startsWith("/delete ")) deleteTask(chatId, messageText.substring(8).trim());
+            else sendMessage(chatId, "Sorry, I couldn't understand your message. Try again.");
 
-            // Commands
-            switch (messageText.split(" ")[0]) {
-                case "/start" -> sendMainMenu(chatId);
-                case "/help" -> sendHelpMenu(chatId);
-                case "/time" -> sendTime(chatId);
-                case "/gamb" -> sendRandom(chatId, userEntity);
-                case "/myinfo" -> sendMyInfo(chatId, userEntity);
-                case "/add" -> {
-                    if (messageText.length() > 5) {
-                        addTask(chatId, userEntity, messageText.substring(5).trim());
-                    }
-                }
-                case "/tasks" -> listTasks(chatId, userEntity);
-                case "/done" -> {
-                    if (messageText.length() > 6) markDone(chatId, userEntity, messageText.substring(6).trim());
-                }
-                case "/delete" -> {
-                    if (messageText.length() > 8) deleteTask(chatId, userEntity, messageText.substring(8).trim());
-                }
-                default -> sendMessage(chatId, "Unknown command. Type /help for commands.");
-            }
         } else if (update.hasCallbackQuery()) {
-            handleCallback(update.getCallbackQuery());
+            handleCallbackQuery(update.getCallbackQuery());
         }
     }
 
-    private void addTask(Long chatId, UserEntity user, String description) {
-        TaskEntity task = new TaskEntity();
-        task.setDescription(description);
-        task.setCompleted(false);
-        task.setUser(user);
-        taskRepository.save(task);
-        sendMessage(chatId, "✅ Task added: " + description);
+    private void handleCallbackQuery(CallbackQuery callbackQuery) {
+        var data = callbackQuery.getData();
+        var chatId = callbackQuery.getMessage().getChatId();
+        var user = callbackQuery.getFrom();
+
+        deleteCallbackMessage(callbackQuery);
+
+        switch (data) {
+            case "tasks_menu" -> sendTasksMenu(chatId);
+            case "help" -> sendHelpMenu(chatId);
+            case "time" -> sendTime(chatId);
+            case "rnd_number" -> sendRandom(chatId);
+            case "my_name" -> sendMyName(chatId, user);
+            case "gamble_again" -> sendRandom(chatId);
+            case "back" -> sendMainMenuRun(chatId);
+            case "check" -> sendStats(chatId);
+            case "tasks_add" -> sendMessage(chatId, "\uD83D\uDCDD Task Manager \n\nUse /add <task> to add a new task.");
+            case "tasks_list" -> listTasks(chatId);
+            default -> sendMessage(chatId, "Unknown command.");
+        }
     }
 
-    private void listTasks(Long chatId, UserEntity user) {
-        List<TaskEntity> tasks = taskRepository.findByUser(user);
+    // ===================== TASK HANDLERS =====================
+    private void addTask(Long chatId, String description) {
+        TaskEntity task = new TaskEntity();
+        task.setChatId(chatId);
+        task.setDescription(description);
+        task.setCompleted(false);
+        taskRepository.save(task);
+        sendMessageWithBack(chatId, "✅ Task added: " + description);
+    }
+
+    private void listTasks(Long chatId) {
+        List<TaskEntity> tasks = taskRepository.findByChatId(chatId);
         if (tasks.isEmpty()) {
-            sendMessage(chatId, "📋 No tasks yet.");
+            sendMessageWithBack(chatId, "📋 No tasks yet.");
             return;
         }
         StringBuilder sb = new StringBuilder("📋 Your Tasks:\n");
         int i = 1;
         for (TaskEntity t : tasks) {
             sb.append(i).append(". ").append(t.getDescription())
-                    .append(t.getCompleted() ? " ✅" : "")
+                    .append(t.isCompleted() ? " ✅" : "")
                     .append("\n");
             i++;
         }
-        sendMessage(chatId, sb.toString());
+        sendMessageWithBack(chatId, sb.toString());
     }
 
-    private void markDone(Long chatId, UserEntity user, String indexStr) {
+    private void markDone(Long chatId, String indexStr) {
         try {
             int index = Integer.parseInt(indexStr) - 1;
-            List<TaskEntity> tasks = taskRepository.findByUser(user);
+            List<TaskEntity> tasks = taskRepository.findByChatId(chatId);
             if (index >= 0 && index < tasks.size()) {
                 TaskEntity task = tasks.get(index);
                 task.setCompleted(true);
                 taskRepository.save(task);
-                sendMessage(chatId, "✅ Task marked as done: " + task.getDescription());
-            } else sendMessage(chatId, "Invalid task number.");
+                sendMessageWithBack(chatId, "✅ Task marked as done: " + task.getDescription());
+            } else sendMessageWithBack(chatId, "Invalid task number.");
         } catch (Exception e) {
-            sendMessage(chatId, "Invalid task number.");
+            sendMessageWithBack(chatId, "Invalid task number.");
         }
     }
 
-    private void deleteTask(Long chatId, UserEntity user, String indexStr) {
+    private void deleteTask(Long chatId, String indexStr) {
         try {
             int index = Integer.parseInt(indexStr) - 1;
-            List<TaskEntity> tasks = taskRepository.findByUser(user);
+            List<TaskEntity> tasks = taskRepository.findByChatId(chatId);
             if (index >= 0 && index < tasks.size()) {
                 TaskEntity task = tasks.get(index);
                 taskRepository.delete(task);
-                sendMessage(chatId, "🗑️ Task deleted: " + task.getDescription());
-            } else sendMessage(chatId, "Invalid task number.");
+                sendMessageWithBack(chatId, "🗑️ Task deleted: " + task.getDescription());
+            } else sendMessageWithBack(chatId, "Invalid task number.");
         } catch (Exception e) {
-            sendMessage(chatId, "Invalid task number.");
+            sendMessageWithBack(chatId, "Invalid task number.");
         }
     }
 
-    private void sendRandom(Long chatId, UserEntity user) {
-        user.setGamblingTurns(user.getGamblingTurns() + 1);
+    // ===================== MESSAGE HELPERS =====================
+    private void sendMessage(Long chatId, String messageText) {
+        SendMessage message = SendMessage.builder().chatId(chatId).text(messageText).build();
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void sendMessageWithBack(Long chatId, String text) {
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
+                .text("◀️ Back")
+                .callbackData("back")
+                .build();
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(markup)
+                .build();
+
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void sendMessageWithCleanup(Long chatId, SendMessage message) {
+        try {
+            var sentMessage = telegramClient.execute(message);
+            if (sentMessage != null) lastMessageIdMap.put(chatId, sentMessage.getMessageId());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void deleteCallbackMessage(CallbackQuery callbackQuery) {
+        try {
+            telegramClient.execute(DeleteMessage.builder()
+                    .chatId(callbackQuery.getMessage().getChatId())
+                    .messageId(callbackQuery.getMessage().getMessageId())
+                    .build());
+        } catch (Exception ignored) {}
+    }
+
+    // ===================== OTHER BOT FEATURES =====================
+    private void sendHelpMenu(Long chatId) {
+        String text = "⚙\uFE0F Help\n\nHere are the list of commands:\n\n" +
+                "/start - Start bot\n" +
+                "/time - Shows current time\n" +
+                "/myinfo - Shows user's info\n" +
+                "/gamb - Gambling slot\n" +
+                "/add <task_here> - Add task\n" +
+                "/tasks - List tasks\n" +
+                "/done [i] - Mark done\n" +
+                "/delete [i] - Delete task\n" +
+                "/help - List commands";
+
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
+                .text("◀️ Back")
+                .callbackData("back")
+                .build();
+
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
+
+        SendMessage message = SendMessage.builder().chatId(chatId).text(text).replyMarkup(markup).build();
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void sendMainMenu(Long chatId) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
+                new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("🕔 Time").callbackData("time").build(),
+                        InlineKeyboardButton.builder().text("🎰 Gambling").callbackData("rnd_number").build()
+                ),
+                new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("👤 My Info").callbackData("my_name").build(),
+                        InlineKeyboardButton.builder().text("📝 Tasks").callbackData("tasks_menu").build()
+                ),
+                new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("⚙\uFE0F Help").callbackData("help").build()
+                )
+        ));
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("👋 Welcome! Please select action:")
+                .replyMarkup(markup)
+                .build();
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void sendMainMenuRun(Long chatId) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
+                new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("🕔 Time").callbackData("time").build(),
+                        InlineKeyboardButton.builder().text("🎰 Gambling").callbackData("rnd_number").build()
+                ),
+                new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("👤 My Info").callbackData("my_name").build(),
+                        InlineKeyboardButton.builder().text("📝 Tasks").callbackData("tasks_menu").build()
+                )
+        ));
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("\uD83D\uDD3D Please select action:")
+                .replyMarkup(markup)
+                .build();
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void sendTasksMenu(Long chatId) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
+                new InlineKeyboardRow(InlineKeyboardButton.builder().text("➕ Add Task").callbackData("tasks_add").build()),
+                new InlineKeyboardRow(InlineKeyboardButton.builder().text("📋 List Tasks").callbackData("tasks_list").build()),
+                new InlineKeyboardRow(InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build())
+        ));
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("📝 Task Manager \n\nChoose an action:")
+                .replyMarkup(markup)
+                .build();
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void sendMyName(Long chatId, User user) {
+        UserEntity dbUser = userRepository.findById(chatId).orElseGet(() -> {
+            UserEntity u = new UserEntity();
+            u.setChatId(chatId);
+            u.setFirstName(user.getFirstName());
+            u.setLastName(user.getLastName());
+            u.setUserName(user.getUserName());
+            u.setPremium(user.getIsPremium() != null && user.getIsPremium());
+            userRepository.save(u);
+            return u;
+        });
+
+        String text = "👤 My Info \n\nYour name is: " + dbUser.getFirstName() +
+                (dbUser.getLastName() != null ? " " + dbUser.getLastName() : "") +
+                "\nYour nick: @" + (dbUser.getUserName() != null ? dbUser.getUserName() : "Unknown") +
+                (dbUser.isPremium() ? "\n\nIs Premium User ⭐" : "\n\nNot a Premium User");
+
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build();
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
+
+        SendMessage message = SendMessage.builder().chatId(chatId).text(text).replyMarkup(markup).build();
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void sendStats(Long chatId) {
+        GambleStats stats = statsMap.get(chatId);
+        if (stats == null) {
+            sendMessage(chatId, "No games played yet.");
+            return;
+        }
+
+        String text = "📊 Gambling Stats\n\n🎰 Turns played: " + stats.turns + "\n🎉 Jackpots hit: " + stats.jackpots;
+
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build();
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
+
+        SendMessage message = SendMessage.builder().chatId(chatId).text(text).replyMarkup(markup).build();
+        sendMessageWithCleanup(chatId, message);
+    }
+
+    private void sendRandom(Long chatId) {
+        GambleStats stats = statsMap.computeIfAbsent(chatId, id -> new GambleStats());
+        stats.turns++;
 
         String[] symbols = {"🍒", "🍋", "7️⃣"};
         int i1 = ThreadLocalRandom.current().nextInt(symbols.length);
         int i2 = ThreadLocalRandom.current().nextInt(symbols.length);
         int i3 = ThreadLocalRandom.current().nextInt(symbols.length);
 
-        String result = "[" + symbols[i1] + "] [" + symbols[i2] + "] [" + symbols[i3] + "]📍";
+        String s1 = symbols[i1];
+        String s2 = symbols[i2];
+        String s3 = symbols[i3];
 
-        String text = (symbols[i1].equals(symbols[i2]) && symbols[i2].equals(symbols[i3])) ?
-                "🎉 JACKPOT!\n\n" + result : "🎰 Result:\n" + result;
+        String result = "[" + s1 + "] [" + s2 + "] [" + s3 + "]📍";
+        String text = (s1.equals(s2) && s2.equals(s3)) ? "🎉 NVCasino Gamble\n\nJACKPOT!\n\n" + result :
+                "🎰 NVCasino Gamble\n\n" + result;
 
-        if (symbols[i1].equals(symbols[i2]) && symbols[i2].equals(symbols[i3])) {
-            user.setJackpots(user.getJackpots() + 1);
-        }
-        userRepository.save(user);
+        if (s1.equals(s2) && s2.equals(s3)) stats.jackpots++;
 
-        sendMessage(chatId, text + "\n\nTurns played: " + user.getGamblingTurns() + " | Jackpots: " + user.getJackpots());
-    }
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
+                new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("🔄 Again").callbackData("gamble_again").build(),
+                        InlineKeyboardButton.builder().text("📝 Check List").callbackData("check").build()
+                ),
+                new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build()
+                )
+        ));
 
-    private void sendMyInfo(Long chatId, UserEntity user) {
-        String premium = user.getPremium() ? "⭐ Premium" : "Not Premium";
-        String text = "👤 My Info\n\nName: " + user.getFirstName() + " " + (user.getLastName() != null ? user.getLastName() : "")
-                + "\nUsername: " + (user.getUsername() != null ? "@" + user.getUsername() : "Unknown")
-                + "\nStatus: " + premium;
-        sendMessage(chatId, text);
+        SendMessage message = SendMessage.builder().chatId(chatId).text(text).replyMarkup(markup).build();
+        sendMessageWithCleanup(chatId, message);
     }
 
     private void sendTime(Long chatId) {
         LocalDateTime now = LocalDateTime.now();
         String dayOfWeek = now.format(DateTimeFormatter.ofPattern("EEEE"));
-        int day = now.getDayOfMonth();
+        int dayOfMonth = now.getDayOfMonth();
         String month = now.format(DateTimeFormatter.ofPattern("MMMM"));
-        String ordinal = getDayOrdinal(day);
+        String ordinal = getDayOrdinal(dayOfMonth);
         String time = now.format(DateTimeFormatter.ofPattern("hh:mm a"));
 
-        sendMessage(chatId, "🕔 Time: " + time + "\n📓 Day: " + dayOfWeek + ", " + day + ordinal + " of " + month);
+        String text = "🕔 Time: " + time + "\n\n📓 Day: " + dayOfWeek + ", " + dayOfMonth + ordinal + " of " + month;
+
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build();
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
+
+        SendMessage message = SendMessage.builder().chatId(chatId).text(text).replyMarkup(markup).build();
+        sendMessageWithCleanup(chatId, message);
     }
 
     private String getDayOrdinal(int day) {
@@ -193,28 +374,5 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             case 3 -> "rd";
             default -> "th";
         };
-    }
-
-    private void sendMainMenu(Long chatId) {
-        sendMessage(chatId,
-                "👋 Welcome! Commands:\n/start /help /time /myinfo /gamb /add /tasks /done /delete");
-    }
-
-    private void sendHelpMenu(Long chatId) {
-        sendMessage(chatId,
-                "⚙ Help\n\n/start - Start bot\n/time - Current time\n/myinfo - Show info\n/gamb - Gamble\n" +
-                        "/add <task> - Add task\n/tasks - List tasks\n/done <i> - Mark done\n/delete <i> - Delete task\n/help - Show this");
-    }
-
-    private void handleCallback(CallbackQuery query) {
-        // Optional: handle inline buttons here if needed
-    }
-
-    private void sendMessage(Long chatId, String text) {
-        try {
-            telegramClient.execute(SendMessage.builder().chatId(chatId).text(text).build());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
     }
 }
