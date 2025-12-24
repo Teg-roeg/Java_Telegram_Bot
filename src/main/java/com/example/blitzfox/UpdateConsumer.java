@@ -1,5 +1,7 @@
 package com.example.blitzfox;
 
+import com.example.blitzfox.entity.GambleStatEntity;
+import com.example.blitzfox.repository.GambleStatRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
@@ -40,13 +42,10 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         this.telegramClient = new OkHttpTelegramClient(botToken);
     }
 
-    private final ConcurrentHashMap<Long, GambleStats> statsMap = new ConcurrentHashMap<>();
-    static class GambleStats {
-        int turns = 0;
-        int jackpots = 0;
-    }
-
     private final ConcurrentHashMap<Long, Integer> lastMessageIdMap = new ConcurrentHashMap<>();
+
+    @Autowired
+    private GambleStatRepository gambleStatRepository;
 
     @Autowired
     private TaskRepository taskRepository;
@@ -301,24 +300,40 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
     }
 
     private void sendStats(Long chatId) {
-        GambleStats stats = statsMap.get(chatId);
+        GambleStatEntity stats = gambleStatRepository.findByChatId(chatId)
+                .orElse(null);
+
         if (stats == null) {
             sendMessage(chatId, "No games played yet.");
             return;
         }
 
-        String text = "📊 Gambling Stats\n\n🎰 Turns played: " + stats.turns + "\n🎉 Jackpots hit: " + stats.jackpots;
+        String text = "📊 Gambling Stats\n\n🎰 Turns played: " + stats.getTurns() +
+                "\n🎉 Jackpots hit: " + stats.getJackpots();
 
-        InlineKeyboardButton backBtn = InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build();
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
+                .text("◀️ Back")
+                .callbackData("back")
+                .build();
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
 
-        SendMessage message = SendMessage.builder().chatId(chatId).text(text).replyMarkup(markup).build();
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(markup)
+                .build();
+
         sendMessageWithCleanup(chatId, message);
     }
 
     private void sendRandom(Long chatId) {
-        GambleStats stats = statsMap.computeIfAbsent(chatId, id -> new GambleStats());
-        stats.turns++;
+        GambleStatEntity stats = gambleStatRepository.findByChatId(chatId)
+                .orElseGet(() -> {
+                    GambleStatEntity newStats = new GambleStatEntity(chatId);
+                    return gambleStatRepository.save(newStats);
+                });
+
+        stats.setTurns(stats.getTurns() + 1);
 
         String[] symbols = {"🍒", "🍋", "7️⃣"};
         int i1 = ThreadLocalRandom.current().nextInt(symbols.length);
@@ -330,22 +345,41 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         String s3 = symbols[i3];
 
         String result = "[" + s1 + "] [" + s2 + "] [" + s3 + "]📍";
-        String text = (s1.equals(s2) && s2.equals(s3)) ? "🎉 NVCasino Gamble\n\nJACKPOT!\n\n" + result :
+        String text = (s1.equals(s2) && s2.equals(s3)) ?
+                "🎉 NVCasino Gamble\n\nJACKPOT!\n\n" + result :
                 "🎰 NVCasino Gamble\n\n" + result;
 
-        if (s1.equals(s2) && s2.equals(s3)) stats.jackpots++;
+        if (s1.equals(s2) && s2.equals(s3)) {
+            stats.setJackpots(stats.getJackpots() + 1);
+        }
+
+        gambleStatRepository.save(stats); // Persist updated stats
+
+        // buttons
+        InlineKeyboardButton againBtn = InlineKeyboardButton.builder()
+                .text("🔄 Again")
+                .callbackData("gamble_again")
+                .build();
+        InlineKeyboardButton checkBtn = InlineKeyboardButton.builder()
+                .text("📝 Check Stats")
+                .callbackData("check")
+                .build();
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
+                .text("◀️ Back")
+                .callbackData("back")
+                .build();
 
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
-                new InlineKeyboardRow(
-                        InlineKeyboardButton.builder().text("🔄 Again").callbackData("gamble_again").build(),
-                        InlineKeyboardButton.builder().text("📝 Check List").callbackData("check").build()
-                ),
-                new InlineKeyboardRow(
-                        InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build()
-                )
+                new InlineKeyboardRow(againBtn, checkBtn),
+                new InlineKeyboardRow(backBtn)
         ));
 
-        SendMessage message = SendMessage.builder().chatId(chatId).text(text).replyMarkup(markup).build();
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(markup)
+                .build();
+
         sendMessageWithCleanup(chatId, message);
     }
 
