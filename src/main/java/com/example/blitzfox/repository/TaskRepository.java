@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface TaskRepository extends JpaRepository<TaskEntity, Long> {
     List<TaskEntity> findByChatId(Long chatId);
+    List<TaskEntity> findByChatIdOrderByIdAsc(Long chatId);
 }

@@ -92,7 +92,6 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         }
     }
 
-    // ===================== TASK HANDLERS =====================
     private void addTask(Long chatId, String description) {
         TaskEntity task = new TaskEntity();
         task.setChatId(chatId);
@@ -137,12 +136,16 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
     private void deleteTask(Long chatId, String indexStr) {
         try {
             int index = Integer.parseInt(indexStr) - 1;
-            List<TaskEntity> tasks = taskRepository.findByChatId(chatId);
+
+            List<TaskEntity> tasks = taskRepository.findByChatIdOrderByIdAsc((chatId));
+
             if (index >= 0 && index < tasks.size()) {
                 TaskEntity task = tasks.get(index);
                 taskRepository.delete(task);
                 sendMessageWithBack(chatId, "🗑️ Task deleted: " + task.getDescription());
-            } else sendMessageWithBack(chatId, "Invalid task number.");
+            } else {
+                sendMessageWithBack(chatId, "Invalid task number.");
+            }
         } catch (Exception e) {
             sendMessageWithBack(chatId, "Invalid task number.");
         }
@@ -201,7 +204,6 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         } catch (Exception ignored) {}
     }
 
-    // ===================== OTHER BOT FEATURES =====================
     private void sendHelpMenu(Long chatId) {
         String text = "⚙\uFE0F Help\n\nHere are the list of commands:\n\n" +
                 "/start - Start bot\n" +
@@ -352,7 +354,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             user.setJackpots(user.getJackpots() + 1);
         }
 
-        userRepository.save(user); // persist updated stats
+        userRepository.save(user);
 
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(
                 new InlineKeyboardRow(
