@@ -66,7 +66,6 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         if (update.hasMessage()) {
             User tgUser = update.getMessage().getFrom();
             Long chatId = update.getMessage().getChatId();
-            UserEntity dbUser = saveOrUpdateUser(tgUser, chatId);
 
             saveOrUpdateUser(tgUser, chatId);
 
@@ -86,7 +85,11 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 else if (messageText.equals("/export")) exportDatabase(chatId);
                 else if ("/time".equalsIgnoreCase(messageText)) sendTime(chatId);
                 else if ("/gamb".equalsIgnoreCase(messageText)) sendRandom(chatId);
-                else if ("/myinfo".equalsIgnoreCase(messageText)) sendMyName(chatId, dbUser);
+                else if ("/myinfo".equalsIgnoreCase(messageText)) {
+                    UserEntity dbUser = userRepository.findById(chatId)
+                            .orElseThrow(() -> new IllegalStateException("User not found"));
+                    sendMyName(chatId, dbUser);
+                }
                 else if ("/add".equalsIgnoreCase(messageText)) {
                     waitingForTask.put(chatId, true);
                     sendMessage(chatId, "✏️ Please send the task text:");
