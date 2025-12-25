@@ -33,6 +33,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 
 
+
 @Component
 public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
@@ -48,6 +49,8 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
     public void init() {
         this.telegramClient = new OkHttpTelegramClient(botToken);
     }
+
+    private final ConcurrentHashMap<Long, Boolean> waitingForTask = new ConcurrentHashMap<>();
 
     private final ConcurrentHashMap<Long, Integer> lastMessageIdMap = new ConcurrentHashMap<>();
 
@@ -68,17 +71,29 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
             String messageText = update.getMessage().getText();
 
-            if ("/start".equals(messageText)) sendMainMenu(chatId);
-            else if ("/help".equalsIgnoreCase(messageText)) sendHelpMenu(chatId);
-            else if (messageText.equals("/export")) exportDatabase(chatId);
-            else if ("/time".equalsIgnoreCase(messageText)) sendTime(chatId);
-            else if ("/gamb".equalsIgnoreCase(messageText)) sendRandom(chatId);
-            else if ("/myinfo".equalsIgnoreCase(messageText)) sendMyName(chatId);
-            else if (messageText.startsWith("/add ")) addTask(chatId, messageText.substring(5));
-            else if ("/tasks".equals(messageText)) listTasks(chatId);
-            else if (messageText.startsWith("/done ")) markDone(chatId, messageText.substring(6).trim());
-            else if (messageText.startsWith("/delete ")) deleteTask(chatId, messageText.substring(8).trim());
-            else sendMessage(chatId, "Sorry, I couldn't understand your message.");
+            if (waitingForTask.getOrDefault(chatId, false)) {
+                if (messageText == null || messageText.trim().isEmpty()) {
+                    sendMessage(chatId, "⚠️ Task cannot be empty. Please send a valid task:");
+                    return;
+                }
+                addTask(chatId, messageText.trim());
+                waitingForTask.remove(chatId);
+            } else {
+
+                if ("/start".equals(messageText)) sendMainMenu(chatId);
+                else if ("/help".equalsIgnoreCase(messageText)) sendHelpMenu(chatId);
+                else if (messageText.equals("/export")) exportDatabase(chatId);
+                else if ("/time".equalsIgnoreCase(messageText)) sendTime(chatId);
+                else if ("/gamb".equalsIgnoreCase(messageText)) sendRandom(chatId);
+                else if ("/myinfo".equalsIgnoreCase(messageText)) sendMyName(chatId);
+                else if ("/add".equalsIgnoreCase(messageText)) {
+                    waitingForTask.put(chatId, true);
+                    sendMessage(chatId, "✏️ Please send the task text:");
+                } else if ("/tasks".equals(messageText)) listTasks(chatId);
+                else if (messageText.startsWith("/done ")) markDone(chatId, messageText.substring(6).trim());
+                else if (messageText.startsWith("/delete ")) deleteTask(chatId, messageText.substring(8).trim());
+                else sendMessage(chatId, "Sorry, I couldn't understand your message.");
+            }
         } else if (update.hasCallbackQuery()) {
             CallbackQuery cq = update.getCallbackQuery();
             User tgUser = cq.getFrom();
@@ -106,7 +121,10 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             case "gamble_again" -> sendRandom(chatId);
             case "back" -> sendMainMenuRun(chatId);
             case "check" -> sendStats(chatId);
-            case "tasks_add" -> sendMessage(chatId, "\uD83D\uDCDD Task Manager \n\nUse /add <task> to add a new task.");
+            case "tasks_add" -> {
+                waitingForTask.put(chatId, true);
+                sendMessage(chatId, "✏️ Please send the task text:");
+            }
             case "tasks_list" -> listTasks(chatId);
             default -> sendMessage(chatId, "Unknown command.");
 
