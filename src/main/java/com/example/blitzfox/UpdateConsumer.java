@@ -123,7 +123,17 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             case "rnd_number" -> sendRandom(chatId);
             case "my_name" -> {
                 UserEntity dbUser = userRepository.findById(chatId)
-                        .orElseThrow(() -> new IllegalStateException("User not found"));
+                        .orElseGet(() -> {
+                            // fallback empty user if somehow not in DB
+                            UserEntity empty = new UserEntity();
+                            empty.setChatId(chatId);
+                            empty.setFirstName(" ");
+                            empty.setLastName(" ");
+                            empty.setUserName(" ");
+                            empty.setFirstSeen(LocalDateTime.now());
+                            empty.setLastSeen(LocalDateTime.now());
+                            return empty;
+                        });
                 sendMyName(chatId, dbUser);
             }
             case "gamble_again" -> sendRandom(chatId);
@@ -387,8 +397,9 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                     user.setPremium(Boolean.TRUE.equals(tgUser.getIsPremium()));
                     user.setTurns(0);
                     user.setJackpots(0);
-                    user.setFirstSeen(LocalDateTime.now());
-                    user.setLastSeen(LocalDateTime.now());
+                    LocalDateTime now = LocalDateTime.now();
+                    user.setFirstSeen(now);
+                    user.setLastSeen(now);
                     return userRepository.save(user);
                 });
     }
@@ -396,22 +407,36 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
     private void sendMyName(Long chatId, UserEntity user) {
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
 
+        String firstName = user.getFirstName() != null ? user.getFirstName() : " ";
+        String lastName = user.getLastName() != null ? user.getLastName() : " ";
+        String username = user.getUserName() != null ? user.getUserName() : " ";
+
+        String firstSeen = user.getFirstSeen() != null ? user.getFirstSeen().format(fmt) : "-";
+        String lastSeen = user.getLastSeen() != null ? user.getLastSeen().format(fmt) : "-";
+
         String text =
                 "👤 My Info\n\n" +
-                        "Name: " + user.getFirstName() + " " + user.getLastName() + "\n" +
-                        "Username: @" + user.getUserName() + "\n" +
+                        "Name: " + firstName + " " + lastName + "\n" +
+                        "Username: @" + username + "\n" +
                         "Premium: " + (user.isPremium() ? "⭐ Yes" : "No") + "\n\n" +
                         "🎰 Gambling Stats\n" +
                         "Turns: " + user.getTurns() + "\n" +
                         "Jackpots: " + user.getJackpots() + "\n\n" +
                         "⏰ Activity\n" +
-                        "First seen: " + user.getFirstSeen().format(fmt) + "\n" +
-                        "Last seen: " + user.getLastSeen().format(fmt);
+                        "First seen: " + firstSeen + "\n" +
+                        "Last seen: " + lastSeen;
 
-        InlineKeyboardButton backBtn = InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build();
+        InlineKeyboardButton backBtn = InlineKeyboardButton.builder()
+                .text("◀️ Back")
+                .callbackData("back")
+                .build();
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));
 
-        SendMessage message = SendMessage.builder().chatId(chatId).text(text).replyMarkup(markup).build();
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(markup)
+                .build();
         sendMessageWithCleanup(chatId, message);
     }
 
