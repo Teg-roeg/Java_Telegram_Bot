@@ -78,7 +78,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             else if ("/tasks".equals(messageText)) listTasks(chatId);
             else if (messageText.startsWith("/done ")) markDone(chatId, messageText.substring(6).trim());
             else if (messageText.startsWith("/delete ")) deleteTask(chatId, messageText.substring(8).trim());
-            else sendMessage(chatId, "Sorry, I couldn't understand your message.");
+            else sendMessage(chatId, "Sorry, I couldn't understand your message.\n\n" + update.getMessage().getChatId());
         } else if (update.hasCallbackQuery()) {
             CallbackQuery cq = update.getCallbackQuery();
             User tgUser = cq.getFrom();
@@ -109,6 +109,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             case "tasks_add" -> sendMessage(chatId, "\uD83D\uDCDD Task Manager \n\nUse /add <task> to add a new task.");
             case "tasks_list" -> listTasks(chatId);
             default -> sendMessage(chatId, "Unknown command.");
+
         }
     }
 
