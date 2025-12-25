@@ -73,7 +73,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             else if (messageText.equals("/export")) exportDatabase(chatId);
             else if ("/time".equalsIgnoreCase(messageText)) sendTime(chatId);
             else if ("/gamb".equalsIgnoreCase(messageText)) sendRandom(chatId);
-            else if ("/myinfo".equalsIgnoreCase(messageText)) sendMyName(chatId, tgUser);
+            else if ("/myinfo".equalsIgnoreCase(messageText)) sendMyName(chatId);
             else if (messageText.startsWith("/add ")) addTask(chatId, messageText.substring(5));
             else if ("/tasks".equals(messageText)) listTasks(chatId);
             else if (messageText.startsWith("/done ")) markDone(chatId, messageText.substring(6).trim());
@@ -102,7 +102,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             case "help" -> sendHelpMenu(chatId);
             case "time" -> sendTime(chatId);
             case "rnd_number" -> sendRandom(chatId);
-            case "my_name" -> sendMyName(chatId, user);
+            case "my_name" -> sendMyName(chatId);
             case "gamble_again" -> sendRandom(chatId);
             case "back" -> sendMainMenuRun(chatId);
             case "check" -> sendStats(chatId);
@@ -345,32 +345,46 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
     private UserEntity saveOrUpdateUser(User tgUser, Long chatId) {
         return userRepository.findById(chatId)
                 .map(user -> {
-                    user.setFirstName(tgUser.getFirstName());
-                    user.setLastName(tgUser.getLastName());
-                    user.setUserName(tgUser.getUserName());
+                    user.setFirstName(tgUser.getFirstName() != null ? tgUser.getFirstName() : " ");
+                    user.setLastName(tgUser.getLastName() != null ? tgUser.getLastName() : " ");
+                    user.setUserName(tgUser.getUserName() != null ? tgUser.getUserName() : " ");
                     user.setPremium(Boolean.TRUE.equals(tgUser.getIsPremium()));
+                    user.setLastSeen(LocalDateTime.now());
                     return userRepository.save(user);
                 })
                 .orElseGet(() -> {
                     UserEntity user = new UserEntity();
                     user.setChatId(chatId);
-                    user.setFirstName(tgUser.getFirstName());
-                    user.setLastName(tgUser.getLastName());
-                    user.setUserName(tgUser.getUserName());
+                    user.setFirstName(tgUser.getFirstName() != null ? tgUser.getFirstName() : " ");
+                    user.setLastName(tgUser.getLastName() != null ? tgUser.getLastName() : " ");
+                    user.setUserName(tgUser.getUserName() != null ? tgUser.getUserName() : " ");
                     user.setPremium(Boolean.TRUE.equals(tgUser.getIsPremium()));
                     user.setTurns(0);
                     user.setJackpots(0);
+                    user.setFirstSeen(LocalDateTime.now());
+                    user.setLastSeen(LocalDateTime.now());
                     return userRepository.save(user);
                 });
     }
 
-    private void sendMyName(Long chatId, User user) {
-        UserEntity dbUser = userRepository.findById(chatId).orElseThrow();
+    private void sendMyName(Long chatId) {
 
-        String text = "👤 My Info \n\nYour name is: " + dbUser.getFirstName() +
-                (dbUser.getLastName() != null ? " " + dbUser.getLastName() : "") +
-                "\nYour nick: @" + (dbUser.getUserName() != null ? dbUser.getUserName() : "Unknown") +
-                (dbUser.isPremium() ? "\n\nIs Premium User ⭐" : "\n\nNot a Premium User");
+        UserEntity user = userRepository.findById(chatId)
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+
+        String text =
+                "👤 My Info\n\n" +
+                        "Name: " + user.getFirstName() + " " + user.getLastName() + "\n" +
+                        "Username: @" + user.getUserName() + "\n" +
+                        "Premium: " + (user.isPremium() ? "⭐ Yes" : "No") + "\n\n" +
+                        "🎰 Gambling Stats\n" +
+                        "Turns: " + user.getTurns() + "\n" +
+                        "Jackpots: " + user.getJackpots() + "\n\n" +
+                        "⏰ Activity\n" +
+                        "First seen: " + user.getFirstSeen().format(fmt) + "\n" +
+                        "Last seen: " + user.getLastSeen().format(fmt);
 
         InlineKeyboardButton backBtn = InlineKeyboardButton.builder().text("◀️ Back").callbackData("back").build();
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup(List.of(new InlineKeyboardRow(backBtn)));

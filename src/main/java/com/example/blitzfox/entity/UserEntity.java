@@ -4,6 +4,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.LocalDateTime;
+
 @Entity
 public class UserEntity {
 
@@ -15,18 +17,26 @@ public class UserEntity {
     private String userName;
     private boolean isPremium;
 
-    // New fields for gambling
+
     private int turns = 0;
     private int jackpots = 0;
 
-    // getters & setters for all fields
+    private LocalDateTime firstSeen;
+    private LocalDateTime lastSeen;
+
+
+    public LocalDateTime getFirstSeen() { return firstSeen; }
+    public void setFirstSeen(LocalDateTime firstSeen) { this.firstSeen = firstSeen; }
+
+    public LocalDateTime getLastSeen() { return lastSeen; }
+    public void setLastSeen(LocalDateTime lastSeen) { this.lastSeen = lastSeen; }
+
     public int getTurns() { return turns; }
     public void setTurns(int turns) { this.turns = turns; }
 
     public int getJackpots() { return jackpots; }
     public void setJackpots(int jackpots) { this.jackpots = jackpots; }
 
-    // Getters & Setters
     public Long getChatId() { return chatId; }
     public void setChatId(Long chatId) { this.chatId = chatId; }
 
