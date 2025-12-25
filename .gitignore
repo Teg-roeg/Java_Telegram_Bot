@@ -1,6 +1,3 @@
-# Secrets
-application.properties
-.env
 
 HELP.md
 target/
