@@ -78,7 +78,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             else if ("/tasks".equals(messageText)) listTasks(chatId);
             else if (messageText.startsWith("/done ")) markDone(chatId, messageText.substring(6).trim());
             else if (messageText.startsWith("/delete ")) deleteTask(chatId, messageText.substring(8).trim());
-            else sendMessage(chatId, "Sorry, I couldn't understand your message.\n\n" + update.getMessage().getChatId());
+            else sendMessage(chatId, "Sorry, I couldn't understand your message.");
         } else if (update.hasCallbackQuery()) {
             CallbackQuery cq = update.getCallbackQuery();
             User tgUser = cq.getFrom();
