@@ -87,7 +87,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 else if ("/gamb".equalsIgnoreCase(messageText)) sendRandom(chatId);
                 else if ("/myinfo".equalsIgnoreCase(messageText)) {
                     UserEntity dbUser = userRepository.findById(chatId)
-                            .orElseThrow(() -> new IllegalStateException("User not found"));
+                            .orElseGet(() -> saveOrUpdateUser(tgUser, chatId));
                     sendMyName(chatId, dbUser);
                 }
                 else if ("/add".equalsIgnoreCase(messageText)) {
@@ -112,9 +112,6 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
     private void handleCallbackQuery(CallbackQuery callbackQuery) {
         var data = callbackQuery.getData();
         var chatId = callbackQuery.getMessage().getChatId();
-        var user = callbackQuery.getFrom();
-
-        deleteCallbackMessage(callbackQuery);
 
         switch (data) {
             case "tasks_menu" -> sendTasksMenu(chatId);
@@ -122,30 +119,39 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             case "time" -> sendTime(chatId);
             case "rnd_number" -> sendRandom(chatId);
             case "my_name" -> {
+                // Get user safely
                 UserEntity dbUser = userRepository.findById(chatId)
                         .orElseGet(() -> {
-                            // fallback empty user if somehow not in DB
-                            UserEntity empty = new UserEntity();
-                            empty.setChatId(chatId);
-                            empty.setFirstName(" ");
-                            empty.setLastName(" ");
-                            empty.setUserName(" ");
-                            empty.setFirstSeen(LocalDateTime.now());
-                            empty.setLastSeen(LocalDateTime.now());
-                            return empty;
+                            UserEntity emptyUser = new UserEntity();
+                            emptyUser.setChatId(chatId);
+                            emptyUser.setFirstName(" ");
+                            emptyUser.setLastName(" ");
+                            emptyUser.setUserName(" ");
+                            emptyUser.setFirstSeen(LocalDateTime.now());
+                            emptyUser.setLastSeen(LocalDateTime.now());
+                            return emptyUser;
                         });
+                // Send info first
                 sendMyName(chatId, dbUser);
+                // Then delete callback message
+                deleteCallbackMessage(callbackQuery);
             }
             case "gamble_again" -> sendRandom(chatId);
-            case "back" -> sendMainMenuRun(chatId);
+            case "back" -> {
+                sendMainMenuRun(chatId);
+                deleteCallbackMessage(callbackQuery);
+            }
             case "check" -> sendStats(chatId);
             case "tasks_add" -> {
                 waitingForTask.put(chatId, true);
                 sendMessage(chatId, "✏️ Please send the task text:");
+                deleteCallbackMessage(callbackQuery);
             }
-            case "tasks_list" -> listTasks(chatId);
+            case "tasks_list" -> {
+                listTasks(chatId);
+                deleteCallbackMessage(callbackQuery);
+            }
             default -> sendMessage(chatId, "Unknown command.");
-
         }
     }
 
