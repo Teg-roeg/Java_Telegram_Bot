@@ -66,6 +66,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         if (update.hasMessage()) {
             User tgUser = update.getMessage().getFrom();
             Long chatId = update.getMessage().getChatId();
+            UserEntity dbUser = saveOrUpdateUser(tgUser, chatId);
 
             saveOrUpdateUser(tgUser, chatId);
 
@@ -85,7 +86,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 else if (messageText.equals("/export")) exportDatabase(chatId);
                 else if ("/time".equalsIgnoreCase(messageText)) sendTime(chatId);
                 else if ("/gamb".equalsIgnoreCase(messageText)) sendRandom(chatId);
-                else if ("/myinfo".equalsIgnoreCase(messageText)) sendMyName(chatId);
+                else if ("/myinfo".equalsIgnoreCase(messageText)) sendMyName(chatId, dbUser);
                 else if ("/add".equalsIgnoreCase(messageText)) {
                     waitingForTask.put(chatId, true);
                     sendMessage(chatId, "✏️ Please send the task text:");
@@ -117,7 +118,11 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             case "help" -> sendHelpMenu(chatId);
             case "time" -> sendTime(chatId);
             case "rnd_number" -> sendRandom(chatId);
-            case "my_name" -> sendMyName(chatId);
+            case "my_name" -> {
+                UserEntity dbUser = userRepository.findById(chatId)
+                        .orElseThrow(() -> new IllegalStateException("User not found"));
+                sendMyName(chatId, dbUser);
+            }
             case "gamble_again" -> sendRandom(chatId);
             case "back" -> sendMainMenuRun(chatId);
             case "check" -> sendStats(chatId);
@@ -385,10 +390,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 });
     }
 
-    private void sendMyName(Long chatId) {
-
-        UserEntity user = userRepository.findById(chatId)
-                .orElseThrow(() -> new IllegalStateException("User not found"));
+    private void sendMyName(Long chatId, UserEntity user) {
 
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
 
