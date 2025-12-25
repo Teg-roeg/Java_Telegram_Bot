@@ -26,9 +26,18 @@ import com.example.blitzfox.repository.TaskRepository;
 import com.example.blitzfox.repository.UserRepository;
 import com.example.blitzfox.entity.TaskEntity;
 import com.example.blitzfox.entity.UserEntity;
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
+
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+
 
 @Component
 public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
+
+    @Value("${admin.chat-id}")
+    private Long adminChatId;
 
     @Value("${TELEGRAM_BOT_TOKEN}")
     private String botToken;
@@ -50,25 +59,36 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
     @Override
     public void consume(Update update) {
+
         if (update.hasMessage()) {
-            String messageText = update.getMessage().getText();
+            User tgUser = update.getMessage().getFrom();
             Long chatId = update.getMessage().getChatId();
 
-            if (messageText.equals("/start")) {saveOrUpdateUser(update); sendMainMenu(chatId);}
-            else if (messageText.equalsIgnoreCase("/help")) sendHelpMenu(chatId);
-            else if (messageText.equalsIgnoreCase("/time")) sendTime(chatId);
-            else if (messageText.equalsIgnoreCase("/gamb")) sendRandom(chatId);
-            else if (messageText.equalsIgnoreCase("/myinfo")){ saveOrUpdateUser(update); sendMyName(chatId, update.getMessage().getFrom());}
+            saveOrUpdateUser(tgUser, chatId);
+
+            String messageText = update.getMessage().getText();
+
+            if ("/start".equals(messageText)) sendMainMenu(chatId);
+            else if ("/help".equalsIgnoreCase(messageText)) sendHelpMenu(chatId);
+            else if (messageText.equals("/export")) exportDatabase(chatId);
+            else if ("/time".equalsIgnoreCase(messageText)) sendTime(chatId);
+            else if ("/gamb".equalsIgnoreCase(messageText)) sendRandom(chatId);
+            else if ("/myinfo".equalsIgnoreCase(messageText)) sendMyName(chatId, tgUser);
             else if (messageText.startsWith("/add ")) addTask(chatId, messageText.substring(5));
-            else if (messageText.equals("/tasks")) listTasks(chatId);
+            else if ("/tasks".equals(messageText)) listTasks(chatId);
             else if (messageText.startsWith("/done ")) markDone(chatId, messageText.substring(6).trim());
             else if (messageText.startsWith("/delete ")) deleteTask(chatId, messageText.substring(8).trim());
-            else sendMessage(chatId, "Sorry, I couldn't understand your message. Try again.");
-
+            else sendMessage(chatId, "Sorry, I couldn't understand your message.");
         } else if (update.hasCallbackQuery()) {
-            handleCallbackQuery(update.getCallbackQuery());
+            CallbackQuery cq = update.getCallbackQuery();
+            User tgUser = cq.getFrom();
+            Long chatId = cq.getMessage().getChatId();
+
+            saveOrUpdateUser(tgUser, chatId);
+            handleCallbackQuery(cq);
         }
     }
+
 
     private void handleCallbackQuery(CallbackQuery callbackQuery) {
         var data = callbackQuery.getData();
@@ -151,18 +171,51 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         }
     }
 
-    private void saveOrUpdateUser(Update update) {
-        Long chatId = update.getMessage().getChatId();
-        User telegramUser = update.getMessage().getFrom();
+    private void exportDatabase(Long chatId) {
 
-        UserEntity dbUser = userRepository.findById(chatId).orElse(new UserEntity());
-        dbUser.setChatId(chatId);
-        dbUser.setFirstName(telegramUser.getFirstName());
-        dbUser.setLastName(telegramUser.getLastName());
-        dbUser.setUserName(telegramUser.getUserName());
-        dbUser.setPremium(telegramUser.getIsPremium() != null && telegramUser.getIsPremium());
+        if (!chatId.equals(adminChatId)) {
+            sendMessage(chatId, "⛔ Access denied.");
+            return;
+        }
 
-        userRepository.save(dbUser);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("===== USERS =====\n");
+        List<UserEntity> users = userRepository.findAll();
+        for (UserEntity u : users) {
+            sb.append("ChatId: ").append(u.getChatId())
+                    .append(" | Name: ").append(u.getFirstName()).append(" ").append(u.getLastName())
+                    .append(" | Username: @").append(u.getUserName())
+                    .append(" | Premium: ").append(u.isPremium())
+                    .append(" | Turns: ").append(u.getTurns())
+                    .append(" | Jackpots: ").append(u.getJackpots())
+                    .append("\n");
+        }
+
+        sb.append("\n===== TASKS =====\n");
+        List<TaskEntity> tasks = taskRepository.findAll();
+        for (TaskEntity t : tasks) {
+            sb.append("ID: ").append(t.getId())
+                    .append(" | ChatId: ").append(t.getChatId())
+                    .append(" | Task: ").append(t.getDescription())
+                    .append(" | Done: ").append(t.isCompleted())
+                    .append("\n");
+        }
+
+        byte[] fileBytes = sb.toString().getBytes(StandardCharsets.UTF_8);
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(fileBytes);
+
+        SendDocument document = SendDocument.builder()
+                .chatId(chatId)
+                .document(new InputFile(inputStream, "database_export.txt"))
+                .caption("📦 Database export")
+                .build();
+
+        try {
+            telegramClient.execute(document);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void sendMessage(Long chatId, String messageText) {
@@ -259,6 +312,9 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 new InlineKeyboardRow(
                         InlineKeyboardButton.builder().text("👤 My Info").callbackData("my_name").build(),
                         InlineKeyboardButton.builder().text("📝 Tasks").callbackData("tasks_menu").build()
+                ),
+                new InlineKeyboardRow(
+                        InlineKeyboardButton.builder().text("⚙\uFE0F Help").callbackData("help").build()
                 )
         ));
 
@@ -285,17 +341,30 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         sendMessageWithCleanup(chatId, message);
     }
 
+    private UserEntity saveOrUpdateUser(User tgUser, Long chatId) {
+        return userRepository.findById(chatId)
+                .map(user -> {
+                    user.setFirstName(tgUser.getFirstName());
+                    user.setLastName(tgUser.getLastName());
+                    user.setUserName(tgUser.getUserName());
+                    user.setPremium(Boolean.TRUE.equals(tgUser.getIsPremium()));
+                    return userRepository.save(user);
+                })
+                .orElseGet(() -> {
+                    UserEntity user = new UserEntity();
+                    user.setChatId(chatId);
+                    user.setFirstName(tgUser.getFirstName());
+                    user.setLastName(tgUser.getLastName());
+                    user.setUserName(tgUser.getUserName());
+                    user.setPremium(Boolean.TRUE.equals(tgUser.getIsPremium()));
+                    user.setTurns(0);
+                    user.setJackpots(0);
+                    return userRepository.save(user);
+                });
+    }
+
     private void sendMyName(Long chatId, User user) {
-        UserEntity dbUser = userRepository.findById(chatId).orElseGet(() -> {
-            UserEntity u = new UserEntity();
-            u.setChatId(chatId);
-            u.setFirstName(user.getFirstName());
-            u.setLastName(user.getLastName());
-            u.setUserName(user.getUserName());
-            u.setPremium(user.getIsPremium() != null && user.getIsPremium());
-            userRepository.save(u);
-            return u;
-        });
+        UserEntity dbUser = userRepository.findById(chatId).orElseThrow();
 
         String text = "👤 My Info \n\nYour name is: " + dbUser.getFirstName() +
                 (dbUser.getLastName() != null ? " " + dbUser.getLastName() : "") +
